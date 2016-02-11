@@ -1,0 +1,6 @@
+[ssl.gstatic.com.] [44] [IN] A 216.58.201.227
+[216.58.201.227] [44] [IN] PTR ssl.gstatic.com.
+[maplestory.nexon.net.] [1098] [IN] A 208.85.109.101
+[208.85.109.101] [1098] [IN] PTR maplestory.nexon.net.
+[combatarms.nexon.net.] [1761] [IN] A 109.264.76.150
+[109.264.76.150] [1761] [IN] combatarms.nexon.net.
