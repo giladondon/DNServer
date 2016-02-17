@@ -4,3 +4,4 @@
 [208.85.109.101] [1098] [IN] PTR maplestory.nexon.net.
 [combatarms.nexon.net.] [1761] [IN] A 109.264.76.150
 [109.264.76.150] [1761] [IN] combatarms.nexon.net.
+[www.google.com.] [64] [IN] 173.194.116.115
