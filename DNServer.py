@@ -11,7 +11,7 @@ __name__ = 'main'
 A solution for advanced Scapy exercise from Gvahim Book p.143-144
 """
 
-IP_CURREENT = socket.gethostbyname(socket.gethostname())
+IP_CURRENT = '172.16.1.93'
 DNS_PORT = 53
 A_METHOD = 1
 PTR_METHOD = 12
@@ -177,17 +177,18 @@ def generate_ip(pckt):
     : param : sniffed dns query packet
     : return : ip layer
     """
-    ip_layer = IP(src=IP_CURREENT, dst=pckt[IP].src, id=get_packet_ip_id(pckt))
+    omri = 2861
+    ip_layer = IP(id=pckt[IP].id, src=IP_CURRENT, dst=pckt[IP].src)
     return ip_layer
 
 
-def generate_dns(packet, data):
+def generate_dns(pckt, data):
     """
     : param : sniffed dns query packet
     : param : line from database records
     : return : dns layer including dnsrr and dnsqr
     """
-    dns_layer = DNS(qd=packet[DNSQR], an=generate_dnsrr(data))
+    dns_layer = DNS(qd=pckt[DNSQR], an=generate_dnsrr(data))
     return dns_layer
 
 
@@ -221,7 +222,7 @@ def main():
         if is_recorded_packet(current_packet, dns_records_database)[0]:
             print("INRECORD")
             index_record = is_recorded_packet(current_packet, dns_records_database)[1]
-            send_recorded_answer_packet(packet, dns_records_database[index_record])
+            send_recorded_answer_packet(current_packet, dns_records_database[index_record])
         else:
             send_not_recorded_answer_packet(current_packet)
 
