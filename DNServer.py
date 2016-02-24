@@ -63,6 +63,7 @@ def parse_dns_database(line):
     for i in range(len(sections)):
         sections[i] = sections[i].replace('[', '')
         sections[i] = sections[i].replace(']', '')
+    sections[TTL_CELL_INDEX] = int(sections[TTL_CELL_INDEX])
     return sections
 
 
@@ -177,7 +178,6 @@ def generate_ip(pckt):
     : param : sniffed dns query packet
     : return : ip layer
     """
-    omri = 2861
     ip_layer = IP(id=pckt[IP].id, src=IP_CURRENT, dst=pckt[IP].src)
     return ip_layer
 
@@ -188,7 +188,7 @@ def generate_dns(pckt, data):
     : param : line from database records
     : return : dns layer including dnsrr and dnsqr
     """
-    dns_layer = DNS(qd=pckt[DNSQR], an=generate_dnsrr(data))
+    dns_layer = DNS(qd=pckt[DNSQR], an=generate_dnsrr(data), id=pckt[DNS].id)
     return dns_layer
 
 
@@ -199,7 +199,6 @@ def send_recorded_answer_packet(pckt, data):
     Sends answer packet
     """
     answer = generate_ip(pckt)/generate_udp(pckt)/generate_dns(pckt, data)
-    print(answer.show())
     send(answer)
 
 
@@ -209,18 +208,15 @@ def send_not_recorded_answer_packet(pckt):
     """
     answer = generate_ip(pckt)/generate_udp(pckt)/DNS(rcode=NO_SUCH_NAME, id=get_packet_dns_id(pckt), qd=pckt[DNS].qd,
                                                        qdcount=pckt[DNS].qdcount)
-    answer.show()
     send(answer)
 
 
 def main():
     dns_records_database = DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME
     dns_records_database = get_database_parsed(read_file(dns_records_database))
-    print(dns_records_database)
     while True:
         current_packet = sniff(count=1, lfilter=filter_packets)[0]
         if is_recorded_packet(current_packet, dns_records_database)[0]:
-            print("INRECORD")
             index_record = is_recorded_packet(current_packet, dns_records_database)[1]
             send_recorded_answer_packet(current_packet, dns_records_database[index_record])
         else:
