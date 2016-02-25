@@ -1,7 +1,10 @@
 import socket
 import sys
+from random import randint
+
 i, e, o = sys.stdin, sys.stderr, sys.stdout
 from scapy.all import *
+
 sys.stdin, sys.stderr, sys.stdout = i, e, o
 
 __author__ = 'Gilad Barak'
@@ -12,6 +15,7 @@ A solution for advanced Scapy exercise from Gvahim Book p.143-144
 """
 
 IP_CURRENT = '172.16.1.93'
+DEFAULT_GATEWAY = '172.16.0.11'
 DNS_PORT = 53
 A_METHOD = 1
 PTR_METHOD = 12
@@ -26,6 +30,11 @@ TYPE_CELL_INDEX = 3
 RDATA_CELL_INDEX = 4
 NO_SUCH_NAME = 3
 IN = '1'
+RANDOM_LENGTH = 3
+PCKT_GATEWAY_INDEX = 0
+PCKT_IP_ID_INDEX = 1
+PCKT_DNS_ID_INDEX = 2
+COMPLEX_GATEWAY_INDEX_CONDITION = 3
 
 
 def is_dns_port(sniffed_packet):
@@ -43,10 +52,37 @@ def is_accepted_method(sniffed_packet):
 def is_query_dns(sniffed_packet):
     return sniffed_packet[DNS].qr == QUERY_QR
 
-CONDITIONS = [is_dns_packet, is_query_dns, is_dns_port, is_accepted_method]
+
+def is_dst_here(sniffed_packet):
+    return sniffed_packet[IP].dst == IP_CURRENT
+
+
+def is_from_gateway(sniffed_packet):
+    return sniffed_packet[IP].src == DEFAULT_GATEWAY
+
+
+CONDITIONS = [is_dns_packet, is_query_dns, is_dns_port, is_accepted_method, is_dst_here]
+GATEWAY_CONDITIONS = [is_dns_packet, is_dns_port, is_dst_here, is_from_gateway]
+
+
+def random_with_n_digits(n):
+    """
+    : param : number of digits
+    : return : Random arbitrary number of digits
+    """
+    range_start = 10 ** (n - 1)
+    range_end = (10 ** n) - 1
+    return randint(range_start, range_end)
 
 
 def filter_packets(sniffed_packet):
+    for condition in CONDITIONS:
+        if not condition(sniffed_packet):
+            return False
+    return True
+
+
+def filter_gateway_packets(sniffed_packet):
     for condition in CONDITIONS:
         if not condition(sniffed_packet):
             return False
@@ -93,9 +129,6 @@ def check_packet_record(pckt, data):
     : param : data - line from database dns records
     : return : boolean value if packet matches line
     """
-    print(data[DOMAIN_CELL_INDEX] + ' - ' + pckt[DNSQR].qname)
-    print(data[DOMAIN_CELL_INDEX] == pckt[DNSQR].qname)
-    print(str(pckt[DNSQR].qclass) is '1')
     return data[DOMAIN_CELL_INDEX] == pckt[DNSQR].qname and pckt[DNSQR].qclass == 1
 
 
@@ -105,44 +138,10 @@ def is_recorded_packet(pckt, database):
     : param : list of lists - database of dns records file
     : return : boolean value if packet in record or not. if True tuple of boolean and index of record
     """
-    print database
     for i in range(len(database)):
         if check_packet_record(pckt, database[i]):
-            print('AY' + str(i))
             return True, i
     return False, -1
-
-
-def get_packet_source(pckt):
-    """
-    : param : sniffed dns query packet
-    : return : packet source
-    """
-    return pckt[IP].src
-
-
-def get_packet_ip_id(pckt):
-    """
-    : param : sniffed dns query packet
-    : return : packet ip id
-    """
-    return pckt[IP].id
-
-
-def get_packet_dns_id(pckt):
-    """
-    : param : sniffed dns query packet
-    : return : packet udp id
-    """
-    return pckt[DNS].id
-
-
-def get_packet_sport(pckt):
-    """
-    : param : sniffed dns query packet
-    : return : packet source port
-    """
-    return pckt[UDP].sport
 
 
 def generate_dnsqr(data):
@@ -159,7 +158,7 @@ def generate_dnsrr(data):
     : param : line from database records
     : return : dnsqr part of dns layer
     """
-    dnsrr_layer = DNSRR(rrname=data[DOMAIN_CELL_INDEX], type=data[TYPE_CELL_INDEX],\
+    dnsrr_layer = DNSRR(rrname=data[DOMAIN_CELL_INDEX], type=data[TYPE_CELL_INDEX], \
                         ttl=data[TTL_CELL_INDEX], rdata=data[RDATA_CELL_INDEX])
     return dnsrr_layer
 
@@ -169,7 +168,7 @@ def generate_udp(pckt):
     : param : sniffed dns query packet
     : return : udp layer
     """
-    udp_layer = UDP(sport=DNS_PORT, dport=get_packet_sport(pckt))
+    udp_layer = UDP(sport=DNS_PORT, dport=pckt[UDP].sport)
     return udp_layer
 
 
@@ -198,17 +197,60 @@ def send_recorded_answer_packet(pckt, data):
     : param : line from database records
     Sends answer packet
     """
-    answer = generate_ip(pckt)/generate_udp(pckt)/generate_dns(pckt, data)
+    answer = generate_ip(pckt) / generate_udp(pckt) / generate_dns(pckt, data)
     send(answer)
 
 
 def send_not_recorded_answer_packet(pckt):
     """
+    : param : sniffed dns query packet
     Sends no-such-name packet
     """
-    answer = generate_ip(pckt)/generate_udp(pckt)/DNS(rcode=NO_SUCH_NAME, id=get_packet_dns_id(pckt), qd=pckt[DNS].qd,
-                                                       qdcount=pckt[DNS].qdcount)
+    answer = generate_ip(pckt) / generate_udp(pckt) / DNS(rcode=NO_SUCH_NAME, id=pckt[DNS].id, qd=pckt[DNS].qd,
+                                                          qdcount=pckt[DNS].qdcount)
     send(answer)
+
+
+def refactor_packet_gateway(pckt):
+    """
+    : param : sniffed dns query packet
+    : return :
+    """
+    ip_layer = IP(src=IP_CURRENT, dst=DEFAULT_GATEWAY)
+    udp_layer = UDP(sport=DNS_PORT, dport=DNS_PORT)
+    dnsqr_layer = DNSQR(qname=pckt[DNS].qd.qname, qtype=pckt[DNS].qd.qtype, qclass=pckt[DNS].qd.qclass)
+    return ip_layer / udp_layer / DNS(qd=dnsqr_layer)
+
+
+def bounce_to_gateway(pckt):
+    """
+    : param : sniffed dns query packet
+    bounces unknown query to gateway and looks for answer.
+    """
+    pckt_ans = refactor_packet_gateway(pckt)
+    print("==============")
+    print("pckt_ans")
+    print("==============")
+    pckt_ans.show()
+    gateway_answer = sr1(pckt_ans)
+    print("==============")
+    print("answer")
+    print("==============")
+    gateway_answer.show()
+    if filter_answers(gateway_answer, pckt)[0]:
+        rranswer = filter_answers(gateway_answer, pckt)[1]
+        answer = generate_ip(pckt)/generate_udp(pckt)/DNS(qd=pckt[DNSQR], id=pckt[DNS].id, an=rranswer)
+        send(answer)
+        return True
+    return False
+
+
+def filter_answers(answer_packet, pckt):
+    for rr in answer_packet[DNS].ns:
+        if rr.rrname == pckt[DNS].qd.qname and rr.type == pckt[DNS].qd.qtype \
+                and rr.rclass == pckt[DNS].qd.qclass:
+            return True, rr
+    return False, 0
 
 
 def main():
@@ -220,7 +262,9 @@ def main():
             index_record = is_recorded_packet(current_packet, dns_records_database)[1]
             send_recorded_answer_packet(current_packet, dns_records_database[index_record])
         else:
-            send_not_recorded_answer_packet(current_packet)
+            bounce_to_gateway(current_packet)
+            if not bounce_to_gateway(current_packet):
+                send_not_recorded_answer_packet(current_packet)
 
 
 if __name__ == "main":
