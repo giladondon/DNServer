@@ -36,6 +36,7 @@ PCKT_GATEWAY_INDEX = 0
 PCKT_IP_ID_INDEX = 1
 PCKT_DNS_ID_INDEX = 2
 COMPLEX_GATEWAY_INDEX_CONDITION = 3
+DNS_DATABASE_FORMAT = "[{}] [{}] [{}] {} {}\n"
 
 
 def is_dns_port(sniffed_packet):
@@ -98,6 +99,7 @@ def get_database_parsed(database_file):
     database = []
     for line in database_file.readlines():
         database.append(parse_dns_database(line))
+    database_file.close()
     return database
 
 
@@ -150,8 +152,10 @@ def generate_dnsrr(data):
     :param data: line from database records
     :return: DNSRR part of dns layer (an/ns)
     """
-    dnsrr_layer = DNSRR(rrname=data[DOMAIN_CELL_INDEX], type=data[TYPE_CELL_INDEX],
-                        ttl=data[TTL_CELL_INDEX], rdata=data[RDATA_CELL_INDEX])
+    print type(data[RDATA_CELL_INDEX])
+    print data[RDATA_CELL_INDEX]
+    dnsrr_layer = DNSRR(rrname=data[DOMAIN_CELL_INDEX], type=data[TYPE_CELL_INDEX],  rdata=data[RDATA_CELL_INDEX],
+                        ttl=data[TTL_CELL_INDEX])
     return dnsrr_layer
 
 
@@ -162,12 +166,13 @@ def generate_udp(pckt):
     """
     try:
         udp_layer = UDP(sport=DNS_PORT, dport=pckt[UDP].sport)
+        return udp_layer
     except IndexError:
         try:
             udp_layer = UDP(sport=DNS_PORT, dport=pckt[UDP in ICMP].sport)
+            return udp_layer
         except TypeError:
             pass
-    return udp_layer
 
 
 def generate_ip(pckt):
@@ -228,6 +233,25 @@ def refactor_packet_gateway(pckt):
     return ip_layer / udp_layer / DNS(qd=dnsqr_layer)
 
 
+def update_database(authorised_answer):
+    """
+    :param pckt: sniffed dns query packet
+    :return : true of process successful
+    """
+    database_file = open(DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME, 'a')
+    database_file_read = open(DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME, 'rb')
+    data_line = DNS_DATABASE_FORMAT.format(authorised_answer.rrname, authorised_answer.ttl,
+                                                   authorised_answer.rclass, authorised_answer.type,
+                                                   authorised_answer.rdata)
+    print(DNS_DATABASE_FORMAT.format(authorised_answer.rrname, authorised_answer.ttl,
+                                                   authorised_answer.rclass, authorised_answer.type,
+                                                   authorised_answer.rdata))
+    if not data_line in database_file_read.readlines():
+        database_file.write(data_line)
+    database_file.close()
+    return True
+
+
 def bounce_to_gateway(pckt):
     """
     :param pckt: sniffed dns query packet
@@ -251,6 +275,8 @@ def bounce_to_gateway(pckt):
         print("DNServer-answer")
         print("==============")
         answer.show()
+        for answer_data_index in range(answer[DNS].ancount):
+            update_database(answer[DNS].an[answer_data_index])
         try:
             send(answer)
             return True
@@ -295,8 +321,9 @@ def filter_answers(answer_packet, pckt):
 
 
 def main():
-    dns_records_database = get_database_parsed(read_file(DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME))
     while True:
+        dns_records_database = get_database_parsed(read_file(DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME))
+        print(dns_records_database)
         current_packet = sniff(count=1, lfilter=filter_packets)[0]
         print('======')
         print('SNIFFED')
