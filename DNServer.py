@@ -288,7 +288,7 @@ def filter_ns_answers(answer_packet, pckt):
     """
     :param answer_packet: packet received from default gateway - answering dns query
     :param pckt: sniffed dns query packet
-    :return :
+    :return : response part for answer packet
     """
     for response_rr in range(answer_packet[DNS].nscount):
             if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
@@ -300,7 +300,7 @@ def filter_an_answers(answer_packet, pckt):
     """
     :param answer_packet: packet received from default gateway - answering dns query
     :param pckt: sniffed dns query packet
-    :return :
+    :return :response part for answer packet
     """
     for response_rr in range(answer_packet[DNS].nscount):
             if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
@@ -312,7 +312,7 @@ def filter_ar_answers(answer_packet, pckt):
     """
     :param answer_packet: packet received from default gateway - answering dns query
     :param pckt: sniffed dns query packet
-    :return :
+    :return : response part for answer packet
     """
     for response_rr in range(answer_packet[DNS].arcount):
                 if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
