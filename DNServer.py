@@ -14,15 +14,15 @@ __name__ = 'main'
 A solution for advanced Scapy exercise from Gvahim Book p.143-144
 """
 
-IP_CURRENT = '192.168.1.139'
-DEFAULT_GATEWAY = '192.168.1.254'
+IP_CURRENT = '172.16.1.3'
+DEFAULT_GATEWAY = '172.16.0.11'
 DNS_PORT = 53
 A_METHOD = 1
 IN_CLASS = 1
 PTR_METHOD = 12
 QUERY_QR = 0
 ACCEPTED_METHODS = {A_METHOD, PTR_METHOD}
-DATABASE_TXT_PATH = "D:\Cyber\DNServer"
+DATABASE_TXT_PATH = "L:\CyberEldad\gilad\DNServer"
 DATABASE_TXT_NAME = "Records.txt"
 DOMAIN_CELL_INDEX = 0
 TTL_CELL_INDEX = 1
@@ -61,7 +61,6 @@ def is_dst_here(sniffed_packet):
 
 def is_from_gateway(sniffed_packet):
     return sniffed_packet[IP].src == DEFAULT_GATEWAY
-
 
 CONDITIONS = [is_dns_packet, is_query_dns, is_dns_port, is_accepted_method, is_dst_here]
 GATEWAY_CONDITIONS = [is_dns_packet, is_dns_port, is_dst_here, is_from_gateway]
@@ -118,10 +117,6 @@ def check_packet_record(pckt, data):
     :param data: data line from database dns records
     :return: boolean value if packet matches line
     """
-    print data[DOMAIN_CELL_INDEX] + ' = ' + pckt[DNSQR].qname
-    print str(pckt[DNSQR].qclass) + ' = ' + str(IN_CLASS)
-    print(data[DOMAIN_CELL_INDEX] == pckt[DNSQR].qname)
-    print(pckt[DNSQR].qclass is IN_CLASS)
     return (data[DOMAIN_CELL_INDEX] == pckt[DNSQR].qname) and (pckt[DNSQR].qclass is IN_CLASS)
 
 
@@ -133,7 +128,6 @@ def is_recorded_packet(pckt, database):
     """
     for data in range(len(database)):
         if check_packet_record(pckt, database[data]):
-            print ('$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
             return True, data
     return False, -1
 
@@ -152,8 +146,6 @@ def generate_dnsrr(data):
     :param data: line from database records
     :return: DNSRR part of dns layer (an/ns)
     """
-    print type(data[RDATA_CELL_INDEX])
-    print data[RDATA_CELL_INDEX]
     dnsrr_layer = DNSRR(rrname=data[DOMAIN_CELL_INDEX], type=data[TYPE_CELL_INDEX],  rdata=data[RDATA_CELL_INDEX],
                         ttl=data[TTL_CELL_INDEX])
     return dnsrr_layer
@@ -201,16 +193,13 @@ def send_recorded_answer_packet(pckt, data):
     Sends answer packet
     """
     answer = generate_ip(pckt) / generate_udp(pckt) / generate_dns(pckt, data)
-    print '========'
-    print 'HEY THATS EASY'
-    print '========'
-    answer.show()
     send(answer)
 
 
 def send_not_recorded_answer_packet(pckt):
     """
     :param pckt: sniffed dns query packet
+    :return : Boolean value if process successful or not
     Sends no-such-name packet
     """
     answer = generate_ip(pckt) / generate_udp(pckt) / DNS(rcode=NO_SUCH_NAME, id=pckt[DNS].id, qd=pckt[DNS].qd,
@@ -243,9 +232,6 @@ def update_database(authorised_answer):
     data_line = DNS_DATABASE_FORMAT.format(authorised_answer.rrname, authorised_answer.ttl,
                                                    authorised_answer.rclass, authorised_answer.type,
                                                    authorised_answer.rdata)
-    print(DNS_DATABASE_FORMAT.format(authorised_answer.rrname, authorised_answer.ttl,
-                                                   authorised_answer.rclass, authorised_answer.type,
-                                                   authorised_answer.rdata))
     if not data_line in database_file_read.readlines():
         database_file.write(data_line)
     database_file.close()
@@ -255,26 +241,18 @@ def update_database(authorised_answer):
 def bounce_to_gateway(pckt):
     """
     :param pckt: sniffed dns query packet
+    :return : Boolean value if process successful or not
     bounces unknown query to gateway and looks for answer.
     """
     pckt_ans = refactor_packet_gateway(pckt)
-    print("==============")
-    print("pckt_ans")
-    print("==============")
-    pckt_ans.show()
     gateway_answer = sr1(pckt_ans)
-    print("==============")
-    print("gateway-answer")
-    print("==============")
-    gateway_answer.show()
-    temp_value = filter_answers(gateway_answer, pckt)
-    if temp_value[0]:
-        rranswer = temp_value[1]
-        answer = generate_ip(pckt) / generate_udp(pckt) / DNS(qd=pckt[DNSQR], id=pckt[DNS].id, an=rranswer)
-        print("==============")
-        print("DNServer-answer")
-        print("==============")
-        answer.show()
+    answers_filtered = filter_answers(gateway_answer, pckt)
+    if answers_filtered[0]:
+        rr_answer = answers_filtered[1]
+        answer = generate_ip(pckt) / generate_udp(pckt) / DNS(qd=pckt[DNSQR], id=pckt[DNS].id, an=rr_answer)
+        if answer[DNS].an is None:
+            send_not_recorded_answer_packet(pckt)
+            return True
         for answer_data_index in range(answer[DNS].ancount):
             update_database(answer[DNS].an[answer_data_index])
         try:
@@ -287,48 +265,65 @@ def bounce_to_gateway(pckt):
 
 
 def filter_answers(answer_packet, pckt):
-    print(type(pckt[DNS].ns))
+    """
+    :param answer_packet: packet received from default gateway - answering dns query
+    :param pckt: sniffed dns query packet
+    :return : (Boolean value if process successful or not, filtered answers)
+    """
     if answer_packet[DNS].an is None and answer_packet[DNS].ns is not None:
-        for responserr in range(answer_packet[DNS].nscount):
-            print str(answer_packet['DNS'].ns[responserr].rrname)
-            print str(answer_packet['DNS'].ns[responserr].type) + ' - ' + str(pckt[DNS].qd.qtype)
-            print str(answer_packet['DNS'].ns[responserr].rclass) + ' - ' + str(pckt[DNS].qd.qclass)
-            if answer_packet[DNS].ns[responserr].type is pckt[DNS].qd.qtype \
-                    and answer_packet[DNS].ns[responserr].rclass is pckt[DNS].qd.qclass:
-                return True, answer_packet[DNS].ns[responserr]
+        return True, filter_ns_answers(answer_packet, pckt)
 
     elif answer_packet[DNS].ns is None and answer_packet[DNS].an is not None:
-        for responserr in range(answer_packet[DNS].ancount):
-            print answer_packet['DNS'].an[responserr].rrname
-            print str(answer_packet['DNS'].an[responserr].type) + ' - ' + str(pckt[DNS].qd.qtype)
-            print str(answer_packet['DNS'].an[responserr].rclass) + ' - ' + str(pckt[DNS].qd.qclass)
-            if (answer_packet[DNS].an[responserr].type is pckt[DNS].qd.qtype) and \
-                    (answer_packet[DNS].an[responserr].rclass is pckt[DNS].qd.qclass):
-                return True, answer_packet['DNS'].an[responserr]
+        return True, filter_an_answers(answer_packet, pckt)
     try:
         if answer_packet[DNS].ar is not None:
-            for responserr in range(answer_packet[DNS].arcount):
-                print answer_packet['DNS'].an[responserr].rrname
-                print str(answer_packet['DNS'].an[responserr].type) + ' - ' + str(pckt[DNS].qd.qtype)
-                print str(answer_packet['DNS'].an[responserr].rclass) + ' - ' + str(pckt[DNS].qd.qclass)
-                if answer_packet[DNS].ns[responserr].type is pckt[DNS].qd.qtype \
-                        and answer_packet[DNS].ns[responserr].rclass is pckt[DNS].qd.qclass:
-                    return True, answer_packet[DNS].ns[responserr]
+            return True, filter_ar_answers(answer_packet, pckt)
     except TypeError:
         pass
     finally:
         return False, 0
 
 
+def filter_ns_answers(answer_packet, pckt):
+    """
+    :param answer_packet: packet received from default gateway - answering dns query
+    :param pckt: sniffed dns query packet
+    :return :
+    """
+    for response_rr in range(answer_packet[DNS].nscount):
+            if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
+                    and answer_packet[DNS].ns[response_rr].rclass is pckt[DNS].qd.qclass:
+                return answer_packet[DNS].ns[response_rr]
+
+
+def filter_an_answers(answer_packet, pckt):
+    """
+    :param answer_packet: packet received from default gateway - answering dns query
+    :param pckt: sniffed dns query packet
+    :return :
+    """
+    for response_rr in range(answer_packet[DNS].nscount):
+            if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
+                    and answer_packet[DNS].ns[response_rr].rclass is pckt[DNS].qd.qclass:
+                return answer_packet[DNS].ns[response_rr]
+
+
+def filter_ar_answers(answer_packet, pckt):
+    """
+    :param answer_packet: packet received from default gateway - answering dns query
+    :param pckt: sniffed dns query packet
+    :return :
+    """
+    for response_rr in range(answer_packet[DNS].arcount):
+                if answer_packet[DNS].ns[response_rr].type is pckt[DNS].qd.qtype \
+                        and answer_packet[DNS].ns[response_rr].rclass is pckt[DNS].qd.qclass:
+                    return answer_packet[DNS].ns[response_rr]
+
+
 def main():
     while True:
         dns_records_database = get_database_parsed(read_file(DATABASE_TXT_PATH + os.sep + DATABASE_TXT_NAME))
-        print(dns_records_database)
         current_packet = sniff(count=1, lfilter=filter_packets)[0]
-        print('======')
-        print('SNIFFED')
-        print('=========')
-        current_packet[0].show()
         temp_value = is_recorded_packet(current_packet, dns_records_database)
         if temp_value[0]:
             index_record = temp_value[1]
