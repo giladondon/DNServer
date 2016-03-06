@@ -1,3 +1,7 @@
+"""
+Very well done. Please see comments below. Your grade is 100.
+"""
+
 import socket
 import sys
 from random import randint
@@ -40,38 +44,47 @@ DNS_DATABASE_FORMAT = "[{}] [{}] [{}] {} {}\n"
 
 
 def is_dns_port(sniffed_packet):
+#YANAI: Method documentation?
     return sniffed_packet[UDP].dport == DNS_PORT
 
 
 def is_dns_packet(sniffed_packet):
+#YANAI: Method documentation?
     return DNS in sniffed_packet and DNSQR in sniffed_packet
 
 
 def is_accepted_method(sniffed_packet):
+#YANAI: Method documentation?
     return sniffed_packet[DNSQR].qtype in ACCEPTED_METHODS
 
 
 def is_query_dns(sniffed_packet):
+#YANAI: Method documentation?
     return sniffed_packet[DNS].qr == QUERY_QR
 
 
 def is_dst_here(sniffed_packet):
+#YANAI: Method documentation?
     return sniffed_packet[IP].dst == IP_CURRENT
 
 
 def is_from_gateway(sniffed_packet):
+#YANAI: Method documentation?
     return sniffed_packet[IP].src == DEFAULT_GATEWAY
 
+#YANAI: Constants should be in start of code.
 CONDITIONS = [is_dns_packet, is_query_dns, is_dns_port, is_accepted_method, is_dst_here]
 GATEWAY_CONDITIONS = [is_dns_packet, is_dns_port, is_dst_here, is_from_gateway]
 
 
 def filter_packets(sniffed_packet):
+#YANAI: Method documentation?
     for condition in CONDITIONS:
         return condition(sniffed_packet)
 
 
 def filter_gateway_packets(sniffed_packet):
+#YANAI: Method documentation?
     for condition in CONDITIONS:
         return condition(sniffed_packet)
 
@@ -101,7 +114,7 @@ def get_database_parsed(database_file):
     database_file.close()
     return database
 
-
+#YANAI: This function is kind of needless, you can just open the file yourself.
 def read_file(file_path):
     """
     :param file_path: path to file to be read
@@ -137,6 +150,8 @@ def generate_dnsqr(data):
     :param data: line from database records
     :return: DNSQR part of dns layer (qd)
     """
+    #YANAI: You keep using the pattern where you put the return variable in a parameter, and then return it. 
+    #You can just use: "return DNSQR(qname=data[DOMAIN_CELL_INDEX], qtype=data[TYPE_CELL_INDEX])"
     dnsqr_layer = DNSQR(qname=data[DOMAIN_CELL_INDEX], qtype=data[TYPE_CELL_INDEX])
     return dnsqr_layer
 
@@ -244,6 +259,7 @@ def bounce_to_gateway(pckt):
     :return : Boolean value if process successful or not
     bounces unknown query to gateway and looks for answer.
     """
+    #YANAI: These three lines could be a function called "query_gateway".
     pckt_ans = refactor_packet_gateway(pckt)
     gateway_answer = sr1(pckt_ans)
     answers_filtered = filter_answers(gateway_answer, pckt)
